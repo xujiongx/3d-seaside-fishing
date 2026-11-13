@@ -1,6 +1,6 @@
 import { ROD_TIERS, SEA_ZONES, sellPrice } from './economy'
 import { FishPreview } from './FishPreview'
-import type { CatchResult, FishingState } from './fishing'
+import type { CatchResult, FightHud, FightMood, FishingState } from './fishing'
 import { fishVisual } from './fishModels'
 import {
   FISH_SPECIES,
@@ -20,6 +20,8 @@ export class GameUI {
   private chargeWrap: HTMLElement
   private tensionFill: HTMLElement
   private tensionWrap: HTMLElement
+  private staminaFill: HTMLElement
+  private staminaWrap: HTMLElement
   private toastEl: HTMLElement
   private catchCard: HTMLElement
   private catalogPanel: HTMLElement
@@ -77,9 +79,16 @@ export class GameUI {
       </div>
 
       <div class="meter" id="tension-wrap">
-        <div class="meter-head"><span>收线</span><span class="meter-val" id="tension-val">0%</span></div>
+        <div class="meter-head"><span>线张力</span><span class="meter-val" id="tension-val">0%</span></div>
         <div class="meter-track"><div class="meter-fill tension" id="tension-fill"></div></div>
       </div>
+
+      <div class="meter" id="stamina-wrap">
+        <div class="meter-head"><span>鱼体力</span><span class="meter-val" id="stamina-val">100%</span></div>
+        <div class="meter-track"><div class="meter-fill stamina" id="stamina-fill"></div></div>
+      </div>
+
+      <div class="fight-banner" id="fight-banner"></div>
 
       <div class="toast" id="toast"></div>
       <div class="bite-flash" id="bite-flash"></div>
@@ -101,7 +110,7 @@ export class GameUI {
         ${
           isMobile
             ? '拖动环顾画面 · 右侧抛竿 · 顶部进入渔市'
-            : '拖动环顾 · 空格抛竿 · B 渔市 · C 图鉴 · I 记录'
+            : '拖动环顾 · 空格抛竿/刺鱼/收线 · A·D 遛鱼转向 · B 渔市'
         }
       </footer>
     `
@@ -112,6 +121,8 @@ export class GameUI {
     this.chargeWrap = this.$('#charge-wrap')
     this.tensionFill = this.$('#tension-fill')
     this.tensionWrap = this.$('#tension-wrap')
+    this.staminaFill = this.$('#stamina-fill')
+    this.staminaWrap = this.$('#stamina-wrap')
     this.toastEl = this.$('#toast')
     this.catchCard = this.$('#catch-card')
     this.catalogPanel = this.$('#catalog-panel')
@@ -125,6 +136,7 @@ export class GameUI {
     this.bind()
     this.setChargeVisible(false)
     this.setTensionVisible(false)
+    this.setStaminaVisible(false)
     this.updateHint('idle')
   }
 
@@ -172,8 +184,9 @@ export class GameUI {
       charging: '继续蓄力，松手抛竿',
       casting: '鱼漂入水',
       waiting: '留意水面动静',
-      bite: mobile ? '马上收线' : '立刻按空格收线',
-      fighting: mobile ? '按住持续收线' : '按住空格收线',
+      bite: mobile ? '立刻点刺鱼！' : '立刻空格刺鱼！',
+      fighting: mobile ? '鱼窜时松开遛鱼，疲软时按住收线' : '窜逃时松开遛鱼 · A/D 反向回拖 · 疲软时按住收线',
+      landing: mobile ? '靠近了！点刺鱼起获' : '靠近了！空格刺鱼起获',
       caught: '收入鱼篓，可去渔市出售',
       missed: '再试一次',
     }
@@ -184,15 +197,43 @@ export class GameUI {
       charging: '蓄力',
       casting: '抛投',
       waiting: '等待',
-      bite: '收线',
-      fighting: '收线',
+      bite: '刺鱼',
+      fighting: '遛鱼',
+      landing: '刺鱼',
       caught: '再抛',
       missed: '再抛',
     }
     const main = this.actionBtn.querySelector('.action-main')
     if (main) main.textContent = labels[state]
-    this.actionBtn.classList.toggle('urgent', state === 'bite')
+    this.actionBtn.classList.toggle('urgent', state === 'bite' || state === 'landing')
     this.actionBtn.classList.toggle('fighting', state === 'fighting')
+  }
+
+  updateFightHud(hud: FightHud): void {
+    this.setTension(hud.tension)
+    this.setStamina(hud.stamina)
+    const banner = this.root.querySelector('#fight-banner')
+    if (!banner) return
+    const moodText: Record<FightMood, string> = {
+      calm: '稳游中 · 可收线',
+      run: hud.runDir < 0 ? '向左猛窜 · 松开并按 D 回拖' : '向右猛窜 · 松开并按 A 回拖',
+      jump: '跃出水面！松开泄力',
+      tired: '鱼已疲软 · 按住收线',
+    }
+    if (hud.canStrike) {
+      banner.textContent = '可以刺鱼起获！'
+      banner.classList.add('show', 'strike')
+    } else {
+      banner.textContent = moodText[hud.mood]
+      banner.classList.add('show')
+      banner.classList.toggle('danger', hud.mood === 'run' || hud.mood === 'jump')
+      banner.classList.toggle('strike', false)
+    }
+  }
+
+  clearFightBanner(): void {
+    const banner = this.root.querySelector('#fight-banner')
+    banner?.classList.remove('show', 'danger', 'strike')
   }
 
   setCharge(value: number): void {
@@ -217,6 +258,17 @@ export class GameUI {
     this.tensionWrap.classList.toggle('visible', v)
   }
 
+  setStamina(value: number): void {
+    const pct = Math.round(Math.min(1, Math.max(0, value)) * 100)
+    this.staminaFill.style.width = `${pct}%`
+    const val = this.root.querySelector('#stamina-val')
+    if (val) val.textContent = `${pct}%`
+  }
+
+  setStaminaVisible(v: boolean): void {
+    this.staminaWrap.classList.toggle('visible', v)
+  }
+
   flashBite(): void {
     this.biteFlash.classList.remove('show')
     void this.biteFlash.offsetWidth
@@ -235,12 +287,14 @@ export class GameUI {
     window.clearTimeout(this.catchTimer)
     this.disposeCatchPreview()
 
+    const visual = fishVisual(species.id)
     this.catchCard.innerHTML = `
       <div class="catch-top">
         <span class="catch-rarity" style="color:${RARITY_COLOR[species.rarity]}">${RARITY_LABEL[species.rarity]}</span>
         ${isNew ? '<span class="catch-new">图鉴新收录</span>' : ''}
       </div>
       <div class="catch-viewport">
+        <img class="catch-thumb" src="${visual.thumb}" alt="" />
         <canvas class="fish-canvas" width="480" height="280"></canvas>
       </div>
       <div class="catch-name">${species.name}</div>
@@ -252,22 +306,21 @@ export class GameUI {
     this.catchCard.classList.add('show')
 
     const canvas = this.catchCard.querySelector('canvas')
+    const thumb = this.catchCard.querySelector('.catch-thumb')
     if (canvas instanceof HTMLCanvasElement) {
-      const visual = fishVisual(species.id)
       this.catchPreview = new FishPreview(canvas)
-      void this.catchPreview.show(
-        visual.model,
-        species.color,
-        species.accent,
-        visual.preserveMaps ?? false,
-      )
+      void this.catchPreview
+        .show(visual.model, species.color, species.accent, visual.preserveMaps ?? false)
+        .then((ok) => {
+          if (ok && thumb instanceof HTMLElement) thumb.classList.add('dimmed')
+        })
     }
 
     this.catchTimer = window.setTimeout(() => {
       this.catchCard.classList.remove('show')
       this.catchCard.classList.add('hidden')
       this.disposeCatchPreview()
-    }, 3800)
+    }, 4200)
   }
 
   private disposeCatchPreview(): void {

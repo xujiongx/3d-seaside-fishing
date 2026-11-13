@@ -154,7 +154,7 @@ export class Game {
         this.fishing.state === 'missed'
       ) {
         this.fishing.startCharge()
-      } else if (this.fishing.state === 'bite') {
+      } else if (this.fishing.state === 'bite' || this.fishing.state === 'landing') {
         this.fishing.tryAction()
       }
     }
@@ -221,7 +221,10 @@ export class Game {
       onStateChange: (state) => {
         this.ui.updateHint(state)
         this.ui.setChargeVisible(state === 'charging')
-        this.ui.setTensionVisible(state === 'fighting')
+        const inFight = state === 'fighting' || state === 'landing'
+        this.ui.setTensionVisible(inFight)
+        this.ui.setStaminaVisible(inFight)
+        if (!inFight) this.ui.clearFightBanner()
 
         const zone = zoneById(this.stats.stats.activeZoneId)
         const statusMap = {
@@ -229,8 +232,9 @@ export class Game {
           charging: '蓄力中',
           casting: '抛竿！',
           waiting: '等待咬钩…',
-          bite: '咬钩了！',
-          fighting: '搏鱼中',
+          bite: '咬钩了！刺鱼',
+          fighting: '遛鱼中',
+          landing: '起获！刺鱼',
           caught: '成功钓获！',
           missed: '跑鱼了',
         } as const
@@ -239,7 +243,7 @@ export class Game {
       onBite: () => {
         this.ui.flashBite()
         this.world.playSplash()
-        this.ui.showToast('鱼咬钩了！快收线', 'good')
+        this.ui.showToast('咬钩了！马上刺鱼', 'good')
       },
       onCatch: (result) => {
         const isNew = !this.discoveredBefore.has(result.species.id)
@@ -255,6 +259,8 @@ export class Game {
         this.ui.showToast(reason, 'bad')
       },
       onTension: (t) => this.ui.setTension(t),
+      onFightHud: (hud) => this.ui.updateFightHud(hud),
+      onFishJump: () => this.ui.showToast('鱼跳起来了！', 'info'),
     }
   }
 
@@ -278,7 +284,7 @@ export class Game {
       this.world.applyLook(look.x, look.y)
     }
 
-    // keyboard charge / cast (separate from UI button hold)
+    // keyboard charge / cast / strike (separate from UI button hold)
     const spaceDown = this.input.isKeyDown('Space') || this.input.isKeyDown('KeyF')
     if (spaceDown && !this.actionHeld) {
       if (
@@ -288,8 +294,11 @@ export class Game {
       ) {
         this.fishing.startCharge()
         this.actionHeld = true
-      } else if (this.fishing.state === 'bite') {
+      } else if (this.fishing.state === 'bite' || this.fishing.state === 'landing') {
         this.fishing.tryAction()
+        this.actionHeld = true
+      } else if (this.fishing.state === 'fighting') {
+        this.actionHeld = true
       }
     }
     if (!spaceDown && this.actionHeld) {
@@ -304,7 +313,11 @@ export class Game {
       this.actionHeld ||
       spaceDown
 
-    this.fishing.update(dt, time, held && !this.ui.isPanelOpen())
+    let steer = 0
+    if (this.input.isKeyDown('KeyA') || this.input.isKeyDown('ArrowLeft')) steer -= 1
+    if (this.input.isKeyDown('KeyD') || this.input.isKeyDown('ArrowRight')) steer += 1
+
+    this.fishing.update(dt, time, held && !this.ui.isPanelOpen(), steer)
     this.ui.setCharge(this.fishing.getCharge())
 
     this.world.update(dt, time)

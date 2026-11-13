@@ -126,6 +126,7 @@ export class SeasideScene {
   private rod: THREE.Group
   private pier: THREE.Group
   private village: THREE.Group
+  private fightFish: THREE.Group
   private rodTipLocal = new THREE.Vector3(0.08, -0.02, -2.35)
   private zoneSunBoost = 2.05
   yaw = 0
@@ -174,6 +175,7 @@ export class SeasideScene {
     this.setRodTier('bamboo')
     this.bobber = this.createBobber()
     this.fishingLine = this.createLine()
+    this.fightFish = this.createFightFish()
 
     this.createBeach()
     this.createShoreDetail()
@@ -187,6 +189,7 @@ export class SeasideScene {
     this.scene.add(this.rod)
     this.scene.add(this.bobber)
     this.scene.add(this.fishingLine)
+    this.scene.add(this.fightFish)
     this.scene.add(this.splash)
 
     this.setZone('harbor')
@@ -673,6 +676,105 @@ export class SeasideScene {
     reel.add(knob)
     reel.position.set(0.08, -0.16, -0.02)
     return reel
+  }
+
+  private createFightFish(): THREE.Group {
+    const group = new THREE.Group()
+    group.visible = false
+    group.name = 'fight-fish'
+
+    const bodyMat = new THREE.MeshPhysicalMaterial({
+      color: 0x6a8a9a,
+      roughness: 0.35,
+      metalness: 0.2,
+      clearcoat: 0.55,
+      clearcoatRoughness: 0.25,
+      sheen: 0.4,
+      sheenColor: new THREE.Color(0xb8d4e8),
+    })
+    const finMat = new THREE.MeshPhysicalMaterial({
+      color: 0x4a6a7a,
+      roughness: 0.45,
+      transparent: true,
+      opacity: 0.92,
+    })
+
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), bodyMat)
+    body.scale.set(1.8, 0.7, 0.85)
+    body.name = 'body'
+    group.add(body)
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), bodyMat)
+    head.position.set(0.28, 0.02, 0)
+    head.scale.set(1.1, 0.85, 0.9)
+    group.add(head)
+
+    const eyeL = new THREE.Mesh(
+      new THREE.SphereGeometry(0.035, 10, 8),
+      new THREE.MeshPhysicalMaterial({ color: 0xf5f8fc, roughness: 0.2, clearcoat: 1 }),
+    )
+    eyeL.position.set(0.34, 0.05, 0.08)
+    const pupilL = new THREE.Mesh(
+      new THREE.SphereGeometry(0.018, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x101418 }),
+    )
+    pupilL.position.set(0.02, 0, 0.01)
+    eyeL.add(pupilL)
+    const eyeR = eyeL.clone()
+    eyeR.position.z = -0.08
+    group.add(eyeL, eyeR)
+
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 8), finMat)
+    tail.rotation.z = Math.PI / 2
+    tail.position.set(-0.42, 0, 0)
+    tail.name = 'tail'
+    group.add(tail)
+
+    const dorsal = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 6), finMat)
+    dorsal.position.set(0.02, 0.16, 0)
+    dorsal.name = 'dorsal'
+    group.add(dorsal)
+
+    group.userData.bodyMat = bodyMat
+    group.userData.finMat = finMat
+    group.castShadow = true
+    return group
+  }
+
+  showFightFish(color: number, accent: number, _speciesId?: string): void {
+    const bodyMat = this.fightFish.userData.bodyMat as THREE.MeshPhysicalMaterial
+    const finMat = this.fightFish.userData.finMat as THREE.MeshPhysicalMaterial
+    bodyMat.color.setHex(color)
+    bodyMat.sheenColor.setHex(accent)
+    finMat.color.setHex(accent)
+    this.fightFish.visible = true
+    this.fightFish.scale.setScalar(0.85)
+  }
+
+  hideFightFish(): void {
+    this.fightFish.visible = false
+  }
+
+  setFightFish(
+    position: THREE.Vector3,
+    heading: number,
+    thrash: number,
+    time: number,
+    airborne: boolean,
+  ): void {
+    if (!this.fightFish.visible) return
+    this.fightFish.position.copy(position)
+    this.fightFish.rotation.y = heading + Math.PI / 2
+    this.fightFish.rotation.z = Math.sin(time * (14 + thrash * 10)) * 0.25 * thrash
+    this.fightFish.rotation.x = airborne
+      ? -0.35 + Math.sin(time * 20) * 0.2
+      : Math.sin(time * 8) * 0.08 * thrash
+
+    const tail = this.fightFish.getObjectByName('tail')
+    if (tail) tail.rotation.y = Math.sin(time * (18 + thrash * 12)) * 0.55 * (0.4 + thrash)
+    const dorsal = this.fightFish.getObjectByName('dorsal')
+    if (dorsal) dorsal.rotation.z = Math.sin(time * 10) * 0.15
+    this.fightFish.scale.setScalar(0.75 + thrash * 0.12)
   }
 
   private createBobber(): THREE.Mesh {

@@ -291,6 +291,47 @@ body,
   background: linear-gradient(90deg, #4a7a96, #6fa896 60%, #c47065);
 }
 
+.meter-fill.stamina {
+  background: linear-gradient(90deg, #c47065, #c4a46a 55%, #6fa896);
+}
+
+#stamina-wrap {
+  bottom: calc(26% + 28px);
+}
+
+.fight-banner {
+  position: absolute;
+  left: 50%;
+  top: 24%;
+  transform: translate(-50%, -6px);
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: rgba(8, 18, 26, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  white-space: nowrap;
+}
+
+.fight-banner.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.fight-banner.danger {
+  border-color: rgba(196, 112, 101, 0.5);
+  color: #e8b4a8;
+}
+
+.fight-banner.strike {
+  border-color: rgba(212, 181, 122, 0.55);
+  color: var(--sun);
+}
+
 /* —— Cast control —— */
 .cast-btn {
   position: absolute;
@@ -533,17 +574,36 @@ body,
 }
 
 .catch-viewport {
-  height: 148px;
+  position: relative;
+  height: 168px;
   margin: 0 -6px 12px;
   background:
-    radial-gradient(ellipse at 50% 70%, rgba(80, 130, 150, 0.18), transparent 60%),
-    rgba(0, 0, 0, 0.25);
+    radial-gradient(ellipse at 50% 70%, rgba(80, 130, 150, 0.22), transparent 60%),
+    #0a1520;
   border: 1px solid rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
 
+.catch-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: #0a1520;
+  transition: opacity 0.35s;
+  z-index: 0;
+}
+
+.catch-thumb.dimmed {
+  opacity: 0.15;
+}
+
 .catch-viewport .fish-canvas,
 .cat-view canvas {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   display: block;

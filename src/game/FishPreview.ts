@@ -9,12 +9,24 @@ gltfLoader.setDRACOLoader(draco)
 
 const cache = new Map<string, THREE.Group>()
 
+function deepCloneModel(source: THREE.Group): THREE.Group {
+  const clone = source.clone(true)
+  // Mesh.clone shares geometry — copy so dispose won't poison the cache
+  clone.traverse((obj) => {
+    const mesh = obj as THREE.Mesh
+    if (mesh.isMesh && mesh.geometry) {
+      mesh.geometry = mesh.geometry.clone()
+    }
+  })
+  return clone
+}
+
 async function loadModel(path: string): Promise<THREE.Group> {
   const hit = cache.get(path)
-  if (hit) return hit.clone(true)
+  if (hit) return deepCloneModel(hit)
   const gltf = await gltfLoader.loadAsync(path)
   cache.set(path, gltf.scene)
-  return gltf.scene.clone(true)
+  return deepCloneModel(gltf.scene)
 }
 
 function isEyeMaterial(src: THREE.MeshStandardMaterial, meshName: string): boolean {
@@ -23,7 +35,6 @@ function isEyeMaterial(src: THREE.MeshStandardMaterial, meshName: string): boole
   const c = src.color
   if (!c) return false
   const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
-  // Keep near-white sclera / near-black pupils from being recolored
   return lum > 0.85 || lum < 0.12
 }
 
@@ -51,7 +62,6 @@ function enhanceFish(
           metalness: 0.05,
           clearcoat: 1,
           clearcoatRoughness: 0.12,
-          envMapIntensity: 1.1,
         })
       }
 
@@ -62,39 +72,53 @@ function enhanceFish(
         roughnessMap: src.roughnessMap ?? null,
         metalnessMap: src.metalnessMap ?? null,
         aoMap: src.aoMap ?? null,
-        roughness: hasMap ? Math.min(0.55, src.roughness ?? 0.45) : 0.32,
-        metalness: hasMap ? Math.min(0.35, src.metalness ?? 0.2) : 0.18,
-        clearcoat: 0.65,
-        clearcoatRoughness: 0.22,
-        sheen: 0.55,
+        roughness: hasMap ? Math.min(0.55, src.roughness ?? 0.45) : 0.38,
+        metalness: hasMap ? Math.min(0.35, src.metalness ?? 0.2) : 0.12,
+        clearcoat: 0.45,
+        clearcoatRoughness: 0.28,
+        sheen: 0.35,
         sheenColor: hi,
-        sheenRoughness: 0.4,
-        envMapIntensity: 1.05,
-        reflectivity: 0.5,
+        sheenRoughness: 0.45,
       })
       if (hasMap && !preserveMaps) {
         next.color = new THREE.Color(0xffffff).lerp(base, 0.28)
       }
       if (src.normalScale) next.normalScale.copy(src.normalScale)
+      // ensure vertex colors from stylized packs still show
+      if (src.vertexColors) next.vertexColors = true
       return next
     })
     mesh.castShadow = true
+    mesh.frustumCulled = false
   })
 }
 
 function fitCamera(root: THREE.Object3D, camera: THREE.PerspectiveCamera): void {
+  root.updateMatrixWorld(true)
   const box = new THREE.Box3().setFromObject(root)
+  if (box.isEmpty()) {
+    camera.position.set(0, 0.4, 2.2)
+    camera.lookAt(0, 0, 0)
+    return
+  }
   const size = box.getSize(new THREE.Vector3())
   const center = box.getCenter(new THREE.Vector3())
   root.position.sub(center)
   const maxDim = Math.max(size.x, size.y, size.z, 0.001)
-  root.scale.setScalar(1.7 / maxDim)
-  // re-center after scale
+  root.scale.setScalar(1.55 / maxDim)
+  root.updateMatrixWorld(true)
+
   const box2 = new THREE.Box3().setFromObject(root)
   const c2 = box2.getCenter(new THREE.Vector3())
   root.position.sub(c2)
-  camera.position.set(1.55, 0.45, 2.25)
-  camera.lookAt(0, 0.05, 0)
+
+  // Prefer a 3/4 view so flat side-profile fish still read clearly
+  const dist = 2.35
+  camera.position.set(dist * 0.55, dist * 0.28, dist * 0.85)
+  camera.near = 0.05
+  camera.far = 40
+  camera.lookAt(0, 0, 0)
+  camera.updateProjectionMatrix()
 }
 
 export class FishPreview {
@@ -113,30 +137,30 @@ export class FishPreview {
       canvas,
       antialias: true,
       alpha: true,
-      powerPreference: 'high-performance',
+      powerPreference: 'low-power',
+      failIfMajorPerformanceCaveat: false,
     })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.renderer.setClearColor(0x000000, 0)
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.12
+    this.renderer.toneMappingExposure = 1.2
 
-    this.camera = new THREE.PerspectiveCamera(32, 1, 0.05, 30)
-    this.scene.add(new THREE.AmbientLight(0xc8dce8, 0.45))
-    this.scene.add(new THREE.HemisphereLight(0xb8d8f0, 0x2a2218, 0.75))
-    const key = new THREE.DirectionalLight(0xfff2dc, 1.85)
+    this.camera = new THREE.PerspectiveCamera(35, 1, 0.05, 40)
+    this.scene.add(new THREE.AmbientLight(0xd0e4f0, 0.7))
+    this.scene.add(new THREE.HemisphereLight(0xc8e4f8, 0x3a2a18, 0.9))
+    const key = new THREE.DirectionalLight(0xfff2dc, 2.1)
     key.position.set(2.2, 3.2, 2.4)
     this.scene.add(key)
-    const rim = new THREE.DirectionalLight(0x7eb8ff, 0.55)
+    const rim = new THREE.DirectionalLight(0x88c4ff, 0.7)
     rim.position.set(-2.4, 1.2, -1.8)
     this.scene.add(rim)
-    const fill = new THREE.DirectionalLight(0xffe8d0, 0.35)
-    fill.position.set(0, -1, 2)
-    this.scene.add(fill)
   }
 
   private resize(): void {
-    const w = this.canvas.clientWidth || 240
-    const h = this.canvas.clientHeight || 160
+    const rect = this.canvas.getBoundingClientRect()
+    const w = Math.max(1, Math.floor(rect.width || this.canvas.clientWidth || 320))
+    const h = Math.max(1, Math.floor(rect.height || this.canvas.clientHeight || 160))
     this.renderer.setSize(w, h, false)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
@@ -147,44 +171,50 @@ export class FishPreview {
     color: number,
     accent: number,
     preserveMaps = false,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const gen = ++this.generation
     this.clearRoot()
+
+    // wait until catch card is laid out (was display:none)
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
+    if (gen !== this.generation) return false
     this.resize()
+
     try {
       const model = await loadModel(path)
       if (gen !== this.generation) {
-        model.traverse((o) => {
-          const m = o as THREE.Mesh
-          if (m.isMesh) {
-            m.geometry?.dispose()
-            const mats = Array.isArray(m.material) ? m.material : [m.material]
-            mats.forEach((mat) => mat.dispose())
-          }
-        })
-        return
+        this.disposeObject(model)
+        return false
       }
       enhanceFish(model, color, accent, preserveMaps)
       fitCamera(model, this.camera)
       this.root = model
       this.scene.add(model)
+      this.resize()
       this.start()
+      // force a couple frames immediately
+      this.renderer.render(this.scene, this.camera)
+      return true
     } catch (err) {
-      console.warn('Fish preview failed', err)
+      console.warn('Fish preview failed', path, err)
+      return false
     }
+  }
+
+  private disposeObject(root: THREE.Object3D): void {
+    root.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (!m.isMesh) return
+      m.geometry?.dispose()
+      const mats = Array.isArray(m.material) ? m.material : [m.material]
+      mats.forEach((mat) => mat.dispose())
+    })
   }
 
   private clearRoot(): void {
     if (!this.root) return
     this.scene.remove(this.root)
-    this.root.traverse((o) => {
-      const m = o as THREE.Mesh
-      if (m.isMesh) {
-        m.geometry?.dispose()
-        const mats = Array.isArray(m.material) ? m.material : [m.material]
-        mats.forEach((mat) => mat.dispose())
-      }
-    })
+    this.disposeObject(this.root)
     this.root = null
   }
 
@@ -194,8 +224,8 @@ export class FishPreview {
     const tick = () => {
       if (!this.running) return
       if (this.root) {
-        this.root.rotation.y += 0.01
-        this.root.position.y = Math.sin(performance.now() * 0.0018) * 0.04
+        this.root.rotation.y += 0.012
+        this.root.position.y = Math.sin(performance.now() * 0.0018) * 0.03
       }
       this.renderer.render(this.scene, this.camera)
       this.raf = requestAnimationFrame(tick)
