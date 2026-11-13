@@ -1,0 +1,15 @@
+Open-source / official assets used in Seaside Fishing:
+
+- Water normals: three.js examples (https://threejs.org/examples/textures/waternormals.jpg)
+- Sand & wood textures + HDRI: Poly Haven (CC0) — sand_01, wood_cabinet_worn_long, syferfontein_18d_clear
+- 3D props (CC0 via Poly Pizza / Kenney et al.):
+  fishing_stand, boat, dock, rock2, crate, barrel, platform, platform2, tree
+
+Fish models (all with built-in eyes, CC0):
+- BarramundiFish — Khronos glTF Sample Assets / Microsoft (CC0), Draco+WebP optimized
+- Quiet Lake Fishing pack — trout / carp / perch — 3DAssets.dev (CC0)
+- Fishing Harbour and Boats — salmon / sea bream — 3DAssets.dev (CC0)
+- Open Ocean and Deep Sea Life — tuna / marlin / swordfish / flying fish / mahi-mahi /
+  sunfish / shark / barracuda — 3DAssets.dev (CC0)
+
+Licenses are CC0 / public domain unless noted by original authors.
