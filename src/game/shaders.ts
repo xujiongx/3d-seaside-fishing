@@ -136,6 +136,10 @@ void main() {
 export const skyFragmentShader = /* glsl */ `
 uniform vec3 uSunDirection;
 uniform float uTime;
+uniform vec3 uZenith;
+uniform vec3 uMid;
+uniform vec3 uHorizon;
+uniform vec3 uWarmHorizon;
 varying vec3 vWorldPosition;
 
 float hash(vec2 p) {
@@ -169,16 +173,11 @@ void main() {
   float h = dir.y;
   vec3 sunDir = normalize(uSunDirection);
 
-  vec3 zenith = vec3(0.1, 0.28, 0.68);
-  vec3 mid = vec3(0.34, 0.6, 0.88);
-  vec3 horizon = vec3(0.7, 0.82, 0.92);
-  vec3 warmHorizon = vec3(0.95, 0.72, 0.48);
-
   float sunHeight = clamp(sunDir.y, 0.0, 1.0);
-  horizon = mix(warmHorizon, horizon, smoothstep(0.05, 0.45, sunHeight));
+  vec3 horizon = mix(uWarmHorizon, uHorizon, smoothstep(0.05, 0.45, sunHeight));
 
-  vec3 sky = mix(horizon, mid, smoothstep(-0.05, 0.25, h));
-  sky = mix(sky, zenith, smoothstep(0.15, 0.75, h));
+  vec3 sky = mix(horizon, uMid, smoothstep(-0.05, 0.25, h));
+  sky = mix(sky, uZenith, smoothstep(0.15, 0.75, h));
 
   float sunDot = max(dot(dir, sunDir), 0.0);
   float mie = pow(sunDot, 8.0) * 0.28;

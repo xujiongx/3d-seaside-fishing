@@ -122,8 +122,22 @@ export class Game {
       game.stats.discoveryProgress().found,
       game.stats.discoveryProgress().total,
     )
+    // one-time test top-up so rod/zone unlocks can be tried quickly
+    const grantKey = 'seaside-fishing-grant-10k-v1'
+    if (!localStorage.getItem(grantKey)) {
+      game.stats.addCoins(10000)
+      localStorage.setItem(grantKey, '1')
+      game.ui.showToast('测试充值 +10000 金币', 'good')
+    }
+
     game.ui.refreshEconomy(game.stats)
+    game.applyLoadoutVisuals()
     return game
+  }
+
+  private applyLoadoutVisuals(): void {
+    this.world.setRodTier(this.stats.stats.rodId)
+    this.world.setZone(this.stats.stats.activeZoneId)
   }
 
   private wireEvents(): void {
@@ -161,9 +175,20 @@ export class Game {
       const rod = ROD_TIERS.find((r) => r.id === rodId)
       if (!rod) return
       if (this.stats.buyRod(rod.id, rod.price)) {
-        this.ui.showToast(`装备了 ${rod.name}`, 'good')
+        this.world.setRodTier(rod.id)
+        this.ui.showToast(`购买并装备 ${rod.name}`, 'good')
       } else {
-        this.ui.showToast('金币不足或需按顺序升级', 'bad')
+        this.ui.showToast('金币不足或需按顺序解锁', 'bad')
+      }
+      this.ui.refreshEconomy(this.stats)
+      this.ui.openShop(this.stats)
+    }
+    this.ui.onEquipRod = (rodId) => {
+      const rod = ROD_TIERS.find((r) => r.id === rodId)
+      if (!rod) return
+      if (this.stats.equipRod(rod.id)) {
+        this.world.setRodTier(rod.id)
+        this.ui.showToast(`已切换为 ${rod.name}`, 'info')
       }
       this.ui.refreshEconomy(this.stats)
       this.ui.openShop(this.stats)
@@ -172,9 +197,11 @@ export class Game {
       const zone = zoneById(zoneId)
       if (this.stats.stats.unlockedZones.includes(zoneId)) {
         this.stats.setZone(zoneId)
+        this.world.setZone(zoneId)
         this.ui.showToast(`前往：${zone.name}`, 'info')
       } else if (this.stats.unlockZone(zoneId, zone.unlockPrice)) {
         this.stats.setZone(zoneId)
+        this.world.setZone(zoneId)
         this.ui.showToast(`解锁并前往：${zone.name}`, 'good')
       } else {
         this.ui.showToast(`需要 ${zone.unlockPrice} 金币解锁`, 'bad')

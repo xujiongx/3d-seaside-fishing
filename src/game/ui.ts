@@ -40,6 +40,7 @@ export class GameUI {
   onToggleShop: (() => void) | null = null
   onSellAll: (() => void) | null = null
   onBuyRod: ((rodId: string) => void) | null = null
+  onEquipRod: ((rodId: string) => void) | null = null
   onSelectZone: ((zoneId: string) => void) | null = null
 
   constructor(container: HTMLElement, isMobile: boolean) {
@@ -52,7 +53,7 @@ export class GameUI {
       <header class="hud-top">
         <div class="brand-block">
           <div class="brand-name">海边钓鱼</div>
-          <div class="brand-meta" id="zone-meta">近港浅滩</div>
+          <div class="brand-meta" id="zone-meta">近港浅滩 · 竹竿</div>
         </div>
         <div class="hud-resources">
           <div class="res"><span class="res-k">金币</span><span id="coin-label">0</span></div>
@@ -155,8 +156,9 @@ export class GameUI {
     this.coinEl.textContent = String(stats.stats.coins)
     this.basketEl.textContent = String(stats.stats.unsold.length)
     const zone = SEA_ZONES.find((z) => z.id === stats.stats.activeZoneId)
+    const rod = ROD_TIERS.find((r) => r.id === stats.stats.rodId)
     const meta = this.root.querySelector('#zone-meta')
-    if (meta && zone) meta.textContent = zone.name
+    if (meta && zone) meta.textContent = `${zone.name} · ${rod?.name ?? '鱼竿'}`
   }
 
   setStatus(text: string): void {
@@ -324,13 +326,13 @@ export class GameUI {
       return sum + (sp ? sellPrice(sp, f.weight) : 0)
     }, 0)
 
-    const rodIdx = ROD_TIERS.findIndex((x) => x.id === s.rodId)
+    const highestOwned = stats.highestOwnedRodIndex()
     let rodsHtml = ''
     for (let i = 0; i < ROD_TIERS.length; i++) {
       const r = ROD_TIERS[i]
       const isCurrent = r.id === s.rodId
-      const unlocked = i <= rodIdx
-      const canBuy = i === rodIdx + 1
+      const owned = stats.ownsRod(r.id)
+      const canBuy = i === highestOwned + 1
       rodsHtml += `
         <div class="shop-row">
           <div>
@@ -340,10 +342,10 @@ export class GameUI {
           ${
             isCurrent
               ? `<span class="shop-tag">已装备</span>`
-              : unlocked
-                ? `<span class="shop-tag">已拥有</span>`
+              : owned
+                ? `<button type="button" class="shop-btn" data-equip-rod="${r.id}">装备</button>`
                 : canBuy
-                  ? `<button type="button" class="shop-btn" data-buy-rod="${r.id}">${r.price}</button>`
+                  ? `<button type="button" class="shop-btn" data-buy-rod="${r.id}">购买 ${r.price}</button>`
                   : `<span class="shop-tag">锁定</span>`
           }
         </div>`
@@ -396,6 +398,12 @@ export class GameUI {
       btn.addEventListener('click', () => {
         const id = (btn as HTMLElement).dataset.buyRod
         if (id) this.onBuyRod?.(id)
+      })
+    })
+    this.shopPanel.querySelectorAll('[data-equip-rod]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = (btn as HTMLElement).dataset.equipRod
+        if (id) this.onEquipRod?.(id)
       })
     })
     this.shopPanel.querySelectorAll('[data-zone]').forEach((btn) => {

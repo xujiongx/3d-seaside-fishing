@@ -10,8 +10,89 @@ import {
   burstSplash,
   buildVillage,
   createSplashParticles,
+  setVillageZone,
   updateSplash,
 } from './village'
+
+type RodId = 'bamboo' | 'carbon' | 'master'
+type ZoneId = 'harbor' | 'reef' | 'deep'
+
+const ZONE_LOOK: Record<
+  ZoneId,
+  {
+    fog: number
+    fogNear: number
+    fogFar: number
+    deep: number
+    shallow: number
+    foam: number
+    wave: number
+    zenith: number
+    mid: number
+    horizon: number
+    warmHorizon: number
+    hemiSky: number
+    hemiGround: number
+    sunIntensity: number
+    fillIntensity: number
+    cam: THREE.Vector3Tuple
+  }
+> = {
+  harbor: {
+    fog: 0x7aa0b8,
+    fogNear: 50,
+    fogFar: 220,
+    deep: 0x021c2e,
+    shallow: 0x0d6582,
+    foam: 0xeaf5fa,
+    wave: 0.7,
+    zenith: 0x1a479e,
+    mid: 0x5799e0,
+    horizon: 0xb3d1eb,
+    warmHorizon: 0xf2b87a,
+    hemiSky: 0x87b8e0,
+    hemiGround: 0xc2a078,
+    sunIntensity: 2.05,
+    fillIntensity: 0.45,
+    cam: [0, 2.48, 3.6],
+  },
+  reef: {
+    fog: 0x6eb8c4,
+    fogNear: 40,
+    fogFar: 180,
+    deep: 0x03485a,
+    shallow: 0x1aa0a8,
+    foam: 0xf0fffc,
+    wave: 0.55,
+    zenith: 0x0e6a8a,
+    mid: 0x3db8c8,
+    horizon: 0xb8ebe0,
+    warmHorizon: 0xffc9a0,
+    hemiSky: 0x7ed0d8,
+    hemiGround: 0xc99578,
+    sunIntensity: 2.25,
+    fillIntensity: 0.55,
+    cam: [0, 2.55, 3.35],
+  },
+  deep: {
+    fog: 0x2a4058,
+    fogNear: 28,
+    fogFar: 140,
+    deep: 0x010d18,
+    shallow: 0x0a3a55,
+    foam: 0xc5d8e6,
+    wave: 1.15,
+    zenith: 0x061428,
+    mid: 0x1a3a62,
+    horizon: 0x4a6a88,
+    warmHorizon: 0x8a6a58,
+    hemiSky: 0x4a6a88,
+    hemiGround: 0x3a3428,
+    sunIntensity: 1.55,
+    fillIntensity: 0.28,
+    cam: [0, 2.7, 3.9],
+  },
+}
 
 export class SeasideScene {
   scene: THREE.Scene
@@ -19,9 +100,14 @@ export class SeasideScene {
   sun!: THREE.DirectionalLight
   private fillLight!: THREE.DirectionalLight
   private hemi!: THREE.HemisphereLight
+  private rimLight!: THREE.DirectionalLight
   private skyUniforms: {
     uSunDirection: { value: THREE.Vector3 }
     uTime: { value: number }
+    uZenith: { value: THREE.Color }
+    uMid: { value: THREE.Color }
+    uHorizon: { value: THREE.Color }
+    uWarmHorizon: { value: THREE.Color }
   }
   water: THREE.Mesh
   private waterUniforms: {
@@ -39,6 +125,9 @@ export class SeasideScene {
   private fishingLine: THREE.Line
   private rod: THREE.Group
   private pier: THREE.Group
+  private village: THREE.Group
+  private rodTipLocal = new THREE.Vector3(0.08, -0.02, -2.35)
+  private zoneSunBoost = 2.05
   yaw = 0
   pitch = -0.14
   private basePosition = new THREE.Vector3(0, 2.48, 3.6)
@@ -69,6 +158,10 @@ export class SeasideScene {
     this.skyUniforms = {
       uSunDirection: { value: this.sunDirection.clone() },
       uTime: { value: 0 },
+      uZenith: { value: new THREE.Color(0x1a479e) },
+      uMid: { value: new THREE.Color(0x5799e0) },
+      uHorizon: { value: new THREE.Color(0xb3d1eb) },
+      uWarmHorizon: { value: new THREE.Color(0xf2b87a) },
     }
 
     this.setupLights()
@@ -77,22 +170,26 @@ export class SeasideScene {
     this.water = this.createWater()
     this.birds = this.createBirds()
     this.pier = this.createPier()
-    this.rod = this.createRod()
+    this.rod = new THREE.Group()
+    this.setRodTier('bamboo')
     this.bobber = this.createBobber()
     this.fishingLine = this.createLine()
 
     this.createBeach()
     this.createShoreDetail()
     this.splash = createSplashParticles()
+    this.village = buildVillage(assets)
 
     this.scene.add(this.water)
     this.scene.add(this.birds)
     this.scene.add(this.pier)
-    this.scene.add(buildVillage(assets))
+    this.scene.add(this.village)
     this.scene.add(this.rod)
     this.scene.add(this.bobber)
     this.scene.add(this.fishingLine)
     this.scene.add(this.splash)
+
+    this.setZone('harbor')
   }
 
   private setupLights(): void {
@@ -118,9 +215,9 @@ export class SeasideScene {
     this.fillLight.position.set(-40, 20, 30)
     this.scene.add(this.fillLight)
 
-    const rim = new THREE.DirectionalLight(0xffc090, 0.5)
-    rim.position.set(25, 6, -40)
-    this.scene.add(rim)
+    this.rimLight = new THREE.DirectionalLight(0xffc090, 0.5)
+    this.rimLight.position.set(25, 6, -40)
+    this.scene.add(this.rimLight)
 
     this.hemi = new THREE.HemisphereLight(0x87b8e0, 0xc2a078, 0.7)
     this.scene.add(this.hemi)
@@ -376,16 +473,53 @@ export class SeasideScene {
     return group
   }
 
-  private createRod(): THREE.Group {
+  setRodTier(rodId: string): void {
+    const id = (['bamboo', 'carbon', 'master'].includes(rodId) ? rodId : 'bamboo') as RodId
+    while (this.rod.children.length) {
+      const child = this.rod.children[0]
+      this.rod.remove(child)
+      child.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (m.isMesh) {
+          m.geometry?.dispose()
+          const mats = Array.isArray(m.material) ? m.material : [m.material]
+          mats.forEach((mat) => mat.dispose())
+        }
+      })
+    }
+    const built = this.buildRodModel(id)
+    this.rod.add(built)
+    this.rodTipLocal.copy(built.userData.tipLocal as THREE.Vector3)
+    this.rod.rotation.set(-0.12, -0.08, 0.08)
+  }
+
+  setZone(zoneId: string): void {
+    const id = (['harbor', 'reef', 'deep'].includes(zoneId) ? zoneId : 'harbor') as ZoneId
+    const look = ZONE_LOOK[id]
+    const fog = this.scene.fog as THREE.Fog
+    fog.color.setHex(look.fog)
+    fog.near = look.fogNear
+    fog.far = look.fogFar
+    this.waterUniforms.uDeepColor.value.setHex(look.deep)
+    this.waterUniforms.uShallowColor.value.setHex(look.shallow)
+    this.waterUniforms.uFoamColor.value.setHex(look.foam)
+    this.waterUniforms.uWaveHeight.value = look.wave
+    this.skyUniforms.uZenith.value.setHex(look.zenith)
+    this.skyUniforms.uMid.value.setHex(look.mid)
+    this.skyUniforms.uHorizon.value.setHex(look.horizon)
+    this.skyUniforms.uWarmHorizon.value.setHex(look.warmHorizon)
+    this.hemi.color.setHex(look.hemiSky)
+    this.hemi.groundColor.setHex(look.hemiGround)
+    this.zoneSunBoost = look.sunIntensity
+    this.fillLight.intensity = look.fillIntensity
+    this.rimLight.intensity = id === 'deep' ? 0.25 : id === 'reef' ? 0.65 : 0.5
+    this.rimLight.color.setHex(id === 'reef' ? 0xffb090 : id === 'deep' ? 0x8899bb : 0xffc090)
+    this.basePosition.set(look.cam[0], look.cam[1], look.cam[2])
+    setVillageZone(this.village, id)
+  }
+
+  private buildRodModel(id: RodId): THREE.Group {
     const group = new THREE.Group()
-    const carbon = new THREE.MeshPhysicalMaterial({
-      color: 0x1a221e,
-      roughness: 0.28,
-      metalness: 0.55,
-      clearcoat: 0.8,
-      clearcoatRoughness: 0.15,
-      envMapIntensity: 0.9,
-    })
     const cork = new THREE.MeshStandardMaterial({ color: 0xc4a574, roughness: 0.88 })
     const chrome = new THREE.MeshStandardMaterial({
       color: 0xb8c0c8,
@@ -393,33 +527,136 @@ export class SeasideScene {
       roughness: 0.18,
       envMapIntensity: 1.3,
     })
-    const accent = new THREE.MeshStandardMaterial({
-      color: 0xb85c38,
-      roughness: 0.4,
-      metalness: 0.25,
-    })
 
-    const blank = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.04, 2.45, 16), carbon)
-    blank.rotation.x = Math.PI / 2
-    blank.position.set(0.08, -0.06, -1.15)
-    group.add(blank)
-
-    for (const z of [-0.45, -0.95, -1.45, -1.95]) {
-      const guide = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.0035, 8, 14), chrome)
-      guide.position.set(0.08, -0.02, z)
-      group.add(guide)
+    if (id === 'bamboo') {
+      const bamboo = new THREE.MeshPhysicalMaterial({
+        color: 0xc4a45a,
+        roughness: 0.55,
+        metalness: 0.05,
+        clearcoat: 0.25,
+        clearcoatRoughness: 0.4,
+      })
+      const wrap = new THREE.MeshStandardMaterial({ color: 0x6b3a22, roughness: 0.7 })
+      const blank = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.038, 2.15, 12), bamboo)
+      blank.rotation.x = Math.PI / 2
+      blank.position.set(0.08, -0.06, -1.0)
+      group.add(blank)
+      for (const z of [-0.35, -0.85, -1.35, -1.75]) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.004, 6, 12), wrap)
+        ring.position.set(0.08, -0.02, z)
+        group.add(ring)
+      }
+      for (const z of [-0.55, -1.15, -1.65]) {
+        const guide = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.003, 8, 12), chrome)
+        guide.position.set(0.08, -0.02, z)
+        group.add(guide)
+      }
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.045, 0.38, 12), cork)
+      handle.rotation.x = Math.PI / 2
+      handle.position.set(0.08, -0.08, 0.2)
+      group.add(handle)
+      // simple wooden reel seat
+      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.08, 10), wrap)
+      seat.rotation.x = Math.PI / 2
+      seat.position.set(0.08, -0.12, -0.05)
+      group.add(seat)
+      group.userData.tipLocal = new THREE.Vector3(0.08, -0.02, -2.05)
+      return group
     }
 
-    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.42, 14), cork)
+    if (id === 'carbon') {
+      const carbon = new THREE.MeshPhysicalMaterial({
+        color: 0x1a221e,
+        roughness: 0.28,
+        metalness: 0.55,
+        clearcoat: 0.8,
+        clearcoatRoughness: 0.15,
+        envMapIntensity: 0.9,
+      })
+      const accent = new THREE.MeshStandardMaterial({
+        color: 0xb85c38,
+        roughness: 0.4,
+        metalness: 0.25,
+      })
+      const blank = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.04, 2.45, 16), carbon)
+      blank.rotation.x = Math.PI / 2
+      blank.position.set(0.08, -0.06, -1.15)
+      group.add(blank)
+      for (const z of [-0.45, -0.95, -1.45, -1.95]) {
+        const guide = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.0035, 8, 14), chrome)
+        guide.position.set(0.08, -0.02, z)
+        group.add(guide)
+      }
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.42, 14), cork)
+      handle.rotation.x = Math.PI / 2
+      handle.position.set(0.08, -0.08, 0.22)
+      group.add(handle)
+      const butt = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.042, 0.08, 12), accent)
+      butt.rotation.x = Math.PI / 2
+      butt.position.set(0.08, -0.08, 0.44)
+      group.add(butt)
+      group.add(this.buildReel(chrome, accent, cork))
+      group.userData.tipLocal = new THREE.Vector3(0.08, -0.02, -2.35)
+      return group
+    }
+
+    // master — longer, dark graphite + gold
+    const graphite = new THREE.MeshPhysicalMaterial({
+      color: 0x0c1018,
+      roughness: 0.18,
+      metalness: 0.7,
+      clearcoat: 1,
+      clearcoatRoughness: 0.08,
+      envMapIntensity: 1.2,
+    })
+    const gold = new THREE.MeshStandardMaterial({
+      color: 0xd4b46a,
+      metalness: 0.92,
+      roughness: 0.22,
+      envMapIntensity: 1.4,
+    })
+    const blank = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.042, 2.85, 18), graphite)
+    blank.rotation.x = Math.PI / 2
+    blank.position.set(0.08, -0.05, -1.35)
+    group.add(blank)
+    for (const z of [-0.35, -0.85, -1.35, -1.85, -2.35]) {
+      const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.004, 8, 14), gold)
+      wrap.position.set(0.08, -0.015, z)
+      group.add(wrap)
+      const guide = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.003, 8, 16), chrome)
+      guide.position.set(0.08, -0.015, z - 0.08)
+      group.add(guide)
+    }
+    const tipRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.014, 0.0035, 8, 16),
+      new THREE.MeshStandardMaterial({
+        color: 0xffe2a0,
+        emissive: 0x665522,
+        emissiveIntensity: 0.35,
+        metalness: 0.8,
+        roughness: 0.25,
+      }),
+    )
+    tipRing.position.set(0.08, -0.01, -2.7)
+    group.add(tipRing)
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.052, 0.48, 14), cork)
     handle.rotation.x = Math.PI / 2
-    handle.position.set(0.08, -0.08, 0.22)
+    handle.position.set(0.08, -0.08, 0.28)
     group.add(handle)
-
-    const butt = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.042, 0.08, 12), accent)
+    const butt = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.1, 12), gold)
     butt.rotation.x = Math.PI / 2
-    butt.position.set(0.08, -0.08, 0.44)
+    butt.position.set(0.08, -0.08, 0.54)
     group.add(butt)
+    group.add(this.buildReel(chrome, gold, cork))
+    group.userData.tipLocal = new THREE.Vector3(0.08, -0.01, -2.75)
+    return group
+  }
 
+  private buildReel(
+    chrome: THREE.Material,
+    accent: THREE.Material,
+    cork: THREE.Material,
+  ): THREE.Group {
     const reel = new THREE.Group()
     const reelBody = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.07, 0.05, 20), chrome)
     reelBody.rotation.z = Math.PI / 2
@@ -435,10 +672,7 @@ export class SeasideScene {
     knob.position.set(0.02, 0.1, 0)
     reel.add(knob)
     reel.position.set(0.08, -0.16, -0.02)
-    group.add(reel)
-
-    group.rotation.set(-0.12, -0.08, 0.08)
-    return group
+    return reel
   }
 
   private createBobber(): THREE.Mesh {
@@ -557,7 +791,7 @@ export class SeasideScene {
   }
 
   getRodTipWorld(): THREE.Vector3 {
-    const tip = new THREE.Vector3(0.08, -0.02, -2.35)
+    const tip = this.rodTipLocal.clone()
     tip.applyMatrix4(this.rod.matrixWorld)
     return tip
   }
@@ -581,7 +815,7 @@ export class SeasideScene {
     const sunAngle = 0.52 + Math.sin(time * 0.012) * 0.03
     this.sunDirection.set(0.35, sunAngle, -0.45).normalize()
     this.sun.position.copy(this.sunDirection.clone().multiplyScalar(80))
-    this.sun.intensity = 2.0 + Math.sin(time * 0.02) * 0.12
+    this.sun.intensity = this.zoneSunBoost + Math.sin(time * 0.02) * 0.12
     this.hemi.intensity = 0.55 + Math.sin(time * 0.018) * 0.03
 
     this.skyUniforms.uTime.value = time

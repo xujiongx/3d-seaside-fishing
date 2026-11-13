@@ -15,7 +15,10 @@ export interface GameStats {
   misses: number
   coins: number
   totalEarned: number
+  /** Currently equipped rod */
   rodId: string
+  /** All purchased / starter rods */
+  ownedRodIds: string[]
   unlockedZones: string[]
   activeZoneId: string
   unsold: CaughtFish[]
@@ -40,10 +43,26 @@ function emptyStats(): GameStats {
     coins: 40,
     totalEarned: 0,
     rodId: ROD_TIERS[0].id,
+    ownedRodIds: [ROD_TIERS[0].id],
     unlockedZones: [SEA_ZONES[0].id],
     activeZoneId: SEA_ZONES[0].id,
     unsold: [],
   }
+}
+
+/** Migrate old saves that only stored equipped rodId as the max owned tier */
+function normalizeRodOwnership(stats: GameStats): GameStats {
+  const owned = new Set(stats.ownedRodIds?.length ? stats.ownedRodIds : [])
+  if (owned.size === 0) {
+    const maxIdx = rodIndexSafe(stats.rodId)
+    for (let i = 0; i <= maxIdx; i++) owned.add(ROD_TIERS[i].id)
+  }
+  owned.add(ROD_TIERS[0].id)
+  if (!owned.has(stats.rodId)) {
+    stats.rodId = [...owned][0] ?? ROD_TIERS[0].id
+  }
+  stats.ownedRodIds = ROD_TIERS.map((r) => r.id).filter((id) => owned.has(id))
+  return stats
 }
 
 export class StatsManager {
@@ -58,7 +77,7 @@ export class StatsManager {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return emptyStats()
       const parsed = JSON.parse(raw) as GameStats
-      return { ...emptyStats(), ...parsed }
+      return normalizeRodOwnership({ ...emptyStats(), ...parsed })
     } catch {
       return emptyStats()
     }
@@ -111,6 +130,11 @@ export class StatsManager {
     return entry
   }
 
+  addCoins(amount: number): void {
+    this.stats.coins += Math.max(0, Math.floor(amount))
+    this.save()
+  }
+
   sellAll(): { count: number; earned: number } {
     let earned = 0
     for (const fish of this.stats.unsold) {
@@ -125,12 +149,30 @@ export class StatsManager {
     return { count, earned }
   }
 
+  ownsRod(rodId: string): boolean {
+    return this.stats.ownedRodIds.includes(rodId)
+  }
+
+  /** Highest owned rod index — used for sequential unlock purchases */
+  highestOwnedRodIndex(): number {
+    return this.stats.ownedRodIds.reduce((max, id) => Math.max(max, rodIndexSafe(id)), 0)
+  }
+
   buyRod(rodId: string, price: number): boolean {
-    const next = rodIndexSafe(this.stats.rodId) + 1
+    if (this.ownsRod(rodId)) return false
     const target = rodIndexSafe(rodId)
-    if (target !== next) return false
+    if (target !== this.highestOwnedRodIndex() + 1) return false
     if (this.stats.coins < price) return false
     this.stats.coins -= price
+    this.stats.ownedRodIds.push(rodId)
+    this.stats.rodId = rodId
+    this.save()
+    return true
+  }
+
+  equipRod(rodId: string): boolean {
+    if (!this.ownsRod(rodId)) return false
+    if (this.stats.rodId === rodId) return true
     this.stats.rodId = rodId
     this.save()
     return true
